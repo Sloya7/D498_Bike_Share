@@ -1,0 +1,352 @@
+---
+title: "Bike Rental Popularity"
+output:
+  html_document:
+    df_print: paged
+---
+
+Bike Rental Analysis
+
+This notebook will guide you through my analysis of the Motivate bike sharing data for Chicago, New York and Washington to answer three questions:
+
+What are the busiest hours of bike sharing use inside and outside of business (8am -5pm) hours?
+
+What are the top 10 busiest starting and ending stations during business hours?
+
+How many customers vs subscribers use the bike rental system in each city?
+
+To begin this analysis, please make sure that all the following needed packages and libraries are downloaded. Here is the R code:
+
+{r packages_install}
+options(repos = "https://cran.r-project.org/")
+install.packages('dplyr')
+install.packages('ggplot2')
+install.packages('ggpubr')
+install.packages('tidyr')
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(tidyr )
+
+This code will do the initial import of the data from csv files and creates a single location to pull the data.
+
+{r import_data}
+#Import main data
+chicago <- read.csv('chicago.csv')
+new_york <- read.csv('new-york-city.csv')
+washington <- read.csv('washington.csv')
+
+
+#change datatype to POSIXllt
+
+chicago$Start.Time <- as.POSIXlt(chicago$Start.Time)
+new_york$Start.Time <- as.POSIXlt(new_york$Start.Time)
+washington$Start.Time <- as.POSIXlt(washington$Start.Time)
+
+
+all_cities_list <- list(chicago, new_york, washington)
+all_cities_names <- c('Chicago', 'New York', 'Washington')
+
+Question 1: What are the busiest hours of bike sharing use inside and outside of business (8am -5pm) hours?
+
+This loop divides each city into the recreational hours(outside business hours) and the 8-5 business hours.
+
+{r create primary dataframe}
+#will store a list of dataframes as seperated by the next loop
+rental_dfs <- list()
+
+#loops through the list of cities
+for (i in seq_along(all_cities_list)){
+  #creates variable for the df to sort through
+  selected_city <- as.data.frame(c(all_cities_list[i]))
+  
+  #creates the key names of city + Recreation and city + Business
+  rec_name <- paste(all_cities_names[i],'Recreation')
+  business_name <- paste(all_cities_names[i],'Business')
+  
+  
+  #divides the cities data frames into 2 based on 
+  #  business hours(8-5) and recreations hours
+  business_rentals <- subset(selected_city, Start.Time$hour >= 8 & Start.Time$hour < 17)
+  rec_rentals <- subset(selected_city, Start.Time$hour < 8 | Start.Time$hour >= 17)
+  
+  #adds an element to the rental_dfs with the key name associated
+  #with the cooresponding dataframe
+  rental_dfs[[rec_name]]<- as.data.frame(rec_rentals)
+  rental_dfs[[business_name]] <- as.data.frame(business_rentals)
+  
+  #variable clean up
+  rm(rec_name, business_name, business_rentals, rec_rentals)
+} 
+
+
+This block generates and stores the plot data for the recreation and business hours for the cities.
+
+{r group by rec vs bus times}
+##Recreation Plots
+
+#pulls out values(0:7) for x axis
+x_rec_vals <- c((rental_dfs$`Chicago Recreation` %>% count(Start.Time$hour))[1])
+
+
+#create DF columns that have the count of each city's rentals by hour
+rec_hour_data <- data.frame((rental_dfs$`Chicago Recreation` %>% count(Start.Time$hour, name = 'Chicago Hours'))[2],
+                (rental_dfs$`New York Recreation` %>% count(Start.Time$hour, name = 'New York Hours'))[2],
+                (rental_dfs$`Washington Recreation` %>% count(Start.Time$hour, name = 'Washington Hours'))[2])
+
+#restructure dataframe
+rec_graph_data <- data.frame(x = x_rec_vals,
+              rental_Count = c(rec_hour_data$Chicago.Hours,
+                               rec_hour_data$New.York.Hours,
+                               rec_hour_data$Washington.Hours),
+              city = c(rep("Chicago Rentals", nrow(rec_hour_data)),
+                        rep("New York Rentals", nrow(rec_hour_data)),
+                        rep("Washington Rentals", nrow(rec_hour_data))))
+
+#create and store scatter plot with a line(X = hours, y = count)
+rec_plot<- ggplot(rec_graph_data, aes(x = Start.Time.hour,
+                                       y = rental_Count, col = city))+
+              scale_x_continuous(breaks = c(0:7, 17:23))+
+              geom_point(aes(shape = city, color = city))+
+              geom_jitter(height = .3, width = .3)+
+              geom_smooth(alpha = .2, span = .65, size = .85)+
+              labs(x = "Hour of Day", y = "Number of Rentals")
+
+##Business Plot
+
+#Pull x values(8:16)
+x_bus_vals <- c((rental_dfs$`Chicago Business` %>% count(Start.Time$hour))[1])
+
+#create DF columns that have the count of each city's rentals by hour
+bus_hour_data <- data.frame((rental_dfs$`Chicago Business` %>% count(Start.Time$hour, name = 'Chicago Hours'))[2],
+                            (rental_dfs$`New York Business` %>% count(Start.Time$hour, name = 'New York Hours'))[2],
+                            (rental_dfs$`Washington Business` %>% count(Start.Time$hour, name = 'Washington Hours'))[2])
+
+#restructure dataframe
+bus_graph_data <- data.frame(x = x_bus_vals,
+                         rental_Count = c(bus_hour_data$Chicago.Hours,
+                                          bus_hour_data$New.York.Hours,
+                                          bus_hour_data$Washington.Hours),
+                         city = c(rep("Chicago Rentals", nrow(bus_hour_data)),
+                                  rep("New York Rentals", nrow(bus_hour_data)),
+                                  rep("Washington Rentals", nrow(bus_hour_data))))
+
+#create and store scatter plot with a line(X = hours, y = count)
+bus_plot <- ggplot(bus_graph_data, aes(x = Start.Time.hour,
+                                       y = rental_Count, col = city))+
+              scale_x_continuous(breaks = (8:16))+
+              scale_y_continuous(limits = c(0,40000))+
+              geom_point(aes(shape = city, color = city))+
+              geom_smooth(alpha = .4, span = .65, linewidth = .85)+
+              labs(x = "Hour of Day", y = "Number of Rentals")
+
+
+This code will generate the plots for the recreation hours and business hours. Be sure that all code prior to this has been run or the variables needed to be accessed will not exist!
+
+{r produce rec vs bus plot}
+#generate both recreation hour and business hour plots on one page
+ggarrange(rec_plot, bus_plot,
+          nrow = 1,
+          common.legend = TRUE,
+          labels = c("Recreation Hours", "Business Hours"))
+
+
+Question 1 Answers:
+
+Recreation hours:
+
+From this data, we can see that for recreation hours in all cities, there is a steady increase leading up to the business hours and a stead decrease when exiting business hours. For Washington, in the blue line, we can see that the early hours are a little more popular to use this service with 7am being the highest rental hours. For both New York and Chicago, the 5 pm hour is the busiest for number of rentals. NOTE: The line between the hours of 7 and 17 is not point driven in this graph and the estimated line from the early hours and late hours. For detailed information about the business hours, see the next section.
+
+Business hours:
+
+In the graph on the right, we can see that prior to 12 o'clock, all three city follow a similar decreasing trend line. Washington drops off sharply with a peak business hour usage at 8 am. While New York's peak hour of 8 am has a count similar to Chicago, Chicago actual increase significantly at the end of the work day with a peak business hour of the 4 pm hour.
+
+This information may assist in business decisions such as when inventory or maintenance should occur to minimize and disruption in the flow of rentals and sales.
+
+Question 2: What are the top 10 busiest starting and ending stations during business hours?
+
+To answer this question, the initial imports and the rental_df data frame must be generated from the above code.
+
+This code block creates the data frame that counts and organizes all of the data related to the a station having an some type of interaction. The interactions are grouped by city and by type for processing in the graph code portion. You may see a warning text which identifies how the joins occurred. NOTE: This should not affect the functionality of the code and you may move forward.
+
+{r create station dataframes}
+#create DF to house data
+start_end_combined <- data.frame()
+
+
+#loop that cycles through cities, extracting the top 10 start and end locations
+#and places data, with a city name, into the start_end_combined df
+for (list in seq_along(all_cities_names)){
+  
+  #identify which city is being processed
+  city <- as.character(all_cities_names[list])
+  
+  #create string for filtering the rental_df
+  city_data_source <- paste(city, 'Business')
+  
+  #filter rental_df down to current relevant city and hours  
+  city_df <- rental_dfs[[city_data_source]]
+  
+  
+  #count the occurrences of the Start.Station
+  #sort the results into descending order & return top 10
+  top_10_start <- head(city_df %>% count(
+    Start.Station, 
+    name = "Starting Station Count",
+    sort = TRUE),
+    10)
+  
+  #count the occurrences of the End.Station
+  #sort the results into descending order & return top 10
+  top_10_end <- head(city_df %>% count(
+    End.Station,
+    name = "Ending Station Count",
+    sort = TRUE),
+    10)
+  
+  #merge the End the Start data
+  top_10 <- merge.data.frame(top_10_start, 
+                             top_10_end, 
+                             by.x = 'Start.Station', 
+                             by.y = 'End.Station', 
+                             all = TRUE)  
+  
+  #add a city designated column
+  top_10$city <- city
+  
+  #create and input the initial columns and data
+  if (list == 1){
+    start_end_combined <- rbind.data.frame(top_10)
+  }
+  
+  #if columns already exist, complete a join
+  else{
+    start_end_combined <- full_join(start_end_combined, top_10)
+  }
+  #variable clean up
+  rm(top_10, top_10_start, top_10_end, city_df)
+  
+}
+
+#set NA values to 0
+start_end_combined$`Starting Station Count` <- ifelse(start_end_combined$`Starting Station Count` < 0, 0, start_end_combined$`Starting Station Count`)
+start_end_combined$`Ending Station Count` <- ifelse(start_end_combined$`Ending Station Count` < 0, 0, start_end_combined$`Ending Station Count`)
+
+#OPTIONAL: verify data is cleaned up
+# summary(start_end_combined$`Starting Station Count`)
+# summary(start_end_combined$`Ending Station Count`)
+
+
+#create column for the total transactions for each station
+for (r in seq(nrow(start_end_combined))){
+  start_end_combined$total[r] <- sum(start_end_combined$`Starting Station Count`[r],
+                                     start_end_combined$`Ending Station Count`[r])
+}
+
+#order df in descending order according to 'total'
+start_end_combined <- start_end_combined[order(start_end_combined$total, decreasing = TRUE),]
+
+#create smaller df with only top 10 stations
+top_10_stations_bus <- head(start_end_combined, 10)
+
+
+
+#convert to long format
+combined_counts <- top_10_stations_bus %>%
+  pivot_longer(cols = c(`Starting Station Count`, `Ending Station Count`),
+               names_to = "Type",
+               values_to = "Count")
+
+From there, this code block will generate the graph plotting data and store it.
+
+{r format station plots}
+
+col_plot <- 
+  ggplot(combined_counts, aes(x = Start.Station, 
+                              y = Count, 
+                              group = Type, 
+                              fill = Type))+
+  
+  geom_col(position = position_dodge(preserve = 'total'))+
+  
+  labs(title = 'Rentals Per Station',
+       subtitle = 'Top 10 Stations',
+       x = 'Station Location',
+       y = 'No. of Rentals')+
+  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5),
+        plot.title = element_text(hjust = .5),
+        plot.subtitle = element_text(hjust = .5))+
+  
+  guides(fill = guide_legend(title = "Type of Station"))
+  
+
+
+
+#overlay a line with the totals of start and ending station counts
+rentals_per_station_plot <-
+  col_plot +
+  geom_point(aes(y = total, group = Type, col = city), size =1.5)+
+  guides(color = guide_legend(title = "Total Rentals with\nCity Designation"))
+  
+
+Once the code has been run, use this code to generate the visuals. It is recommended to view within a new window to see the column values more clearly.
+
+{r render plots}
+#plot data
+rentals_per_station_plot
+
+Question 2 Answers:
+
+This plots shows us the number of rentals occurring at each of the top ten stations, grouped by whether the occurrence was a bike deposit(ending) or retrieval(starting). The dot above the columns is the total number of rentals from that particular station and the color of dot corresponds to the city which that location belongs. You might notice that New York does not have a top 10 location for rentals and in general, all of these locations have more bikes being deposited than being withdrawn.
+
+The fact that New York does not appear in the top 10 locations certainly sparks a few questions as to why this might be the case, but these questions are outside the capabilities of the data examined. We can use this data to establish procedures to ensure that bikes are properly distributed among the stations. In this case, maybe some of the bike at the popular locations will have to be manually relocated periodically.
+
+Question 3: Are there more customers or subscribers that use the bike rental system in each city?
+
+To answer this question, please ensure that all data frame creation and package importing from the above code blocks were run.
+
+The following code uses a loop to cycle through the cities and generate count totals for the subscriber status and customer status. The information is then transformed for better graphing access in following blocks.
+
+{r generate user counts}
+#This creates a user data frame and 
+#places count values into it for each city
+
+user_counts <- array()
+for (list in seq_along(all_cities_names)){
+  city <- all_cities_list[[list]]
+  city_name <- paste(all_cities_names[list])
+  user_counts <- merge(user_counts, city %>% count(User.Type, name = city_name))
+}
+
+#This pivots the data for better graphing capability
+user_counts <-  user_counts %>%
+  pivot_longer(cols = c(`New York`,`Chicago`, `Washington`),
+               names_to = "Type",
+               values_to = "Count")
+
+
+This code creates, stores, and calls the graph to compare the status of subscriber vs customer in each city.
+
+{r format and plot user plots}
+#This gathers the data and formats the graph
+user_city_plot<- ggplot(user_counts, aes(x = User.Type, fill = Type, y = Count))+
+  geom_col(position = 'dodge')+
+  labs(title = "Number of User by Type and City",
+       x = "User Type",
+       y = "Number of Users")+
+  theme(plot.title = element_text(hjust = .5))+
+  guides(fill = guide_legend(title = "User's City"))
+
+
+#Calls the plot to be rendered
+user_city_plot
+
+
+Question 3 Answers:
+
+From this graph, we can see that an overwhelming proportion of transactions occurred from subscribers vs those in a customer status. From here, we can also see the cities statistics independent of each other which may be helpful when directing resources in marketing campaigns in the different cities.
+
+Summary
+
+There are several interesting takeaways from this data including the unique behavior of transactions according to hour in each city, the fact that New York does not have a top 10 city paired with the fact that New York has the higher subscriber count. These unique finding top the desired answers of who are the primary customers, where they conduct their business and when they do so. As each city ended up providing a different story, I would recommend reviewing the answers to each of those questions for details. Something that should be noted is the limitations of this data. This data was extracted at at single point in time and is static. Additionally, this data did not look at date relevant information such as month or general weather patterns or proportion of user traffic compared to station creation. Instead, this analysis uses a broad approach of aggregating the data to provide a big picture view and identify new questions to dive further into.
